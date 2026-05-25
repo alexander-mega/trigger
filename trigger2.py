@@ -25,6 +25,20 @@ client = TelegramClient('session_iphone', API_ID, API_HASH)
 
 user_auth_state = {}
 
+# Словарь для перевода слов в цифры
+WORDS_TO_DIGITS = {
+    "ноль": "0", "нуль": "0",
+    "один": "1", "раз": "1",
+    "два": "2",
+    "три": "3",
+    "четыре": "4",
+    "пять": "5",
+    "шесть": "6",
+    "семь": "7",
+    "восемь": "8",
+    "девять": "9"
+}
+
 async def handle_web(request):
     return web.Response(text="Бот онлайн!")
 
@@ -47,9 +61,13 @@ async def auth_callback(call: types.CallbackQuery):
         res = await client.send_code_request(PHONE)
         user_auth_state["phone_code_hash"] = res.phone_code_hash
         
-        # Делаем хитрый ForceReply, чтобы скрыть ввод от алгоритмов
+        # Добавил сюда твою подсказку с жирным текстом и примером
         await call.message.answer(
-            "📩 Код отправлен!\n\nСделай **ОТВЕТ (Reply)** на ЭТО сообщение и напиши код через пробелы (например: `1 2 3 4 5`), чтобы Телеграм не заблокировал его!",
+            "📩 **КОД УСПЕШНО ОТПРАВЛЕН!**\n\n"
+            "⚠️ **ВАЖНО:** Чтобы Telegram не заблокировал код, напиши его **СЛОВАМИ ЧЕРЕЗ ПРОБЕЛ**.\n\n"
+            "📌 **ИНСТРУКЦИЯ:** Сделай ОТВЕТ (Reply) на это сообщение и напиши цифры буквами.\n\n"
+            "📝 **ПРИМЕР:** Если тебе пришел код `48205`, то ты должен отправить в ответ строго:\n"
+            "`четыре восемь два ноль пять`",
             reply_markup=types.ForceReply(selective=True)
         )
     except Exception as e:
@@ -59,14 +77,32 @@ async def auth_callback(call: types.CallbackQuery):
 async def handle_reply_code(m: types.Message):
     if m.from_user.id != ADMIN_ID or "phone_code_hash" not in user_auth_state: return
     
-    # Убираем пробелы, которые мы ввели для маскировки кода
-    code = m.text.replace(" ", "").strip()
-    await m.answer(f"⚙️ Пробую войти с кодом {code}...")
+    text_words = m.text.lower().strip().split()
+    converted_digits = []
+    
+    for word in text_words:
+        if word in WORDS_TO_DIGITS:
+            converted_digits.append(WORDS_TO_DIGITS[word])
+        elif word.isdigit():
+            converted_digits.append(word)
+            
+    code = "".join(converted_digits)
+    
+    if len(code) != 5:
+        await m.answer(
+            f"❌ **Ошибка распознавания!**\n"
+            f"Не удалось собрать 5-значный код. У меня получилось только: `{code}`.\n\n"
+            f"Пожалуйста, попробуй еще раз. Пиши строго слова через пробел, например:\n"
+            f"`один два три четыре пять`"
+        )
+        return
+
+    await m.answer(f"⚙️ Код успешно переведен из слов в цифры: `{code}`.\nПробую войти в аккаунт...")
     
     try:
         await client.connect()
         await client.sign_in(phone=PHONE, code=code, phone_code_hash=user_auth_state["phone_code_hash"])
-        await m.answer("🎉 УРА! Юзербот успешно залогинился и работает!")
+        await m.answer("🎉 **УРА! Юзербот успешно залогинился и запущен!**")
         user_auth_state.clear()
     except Exception as e:
         await m.answer(f"❌ Ошибка входа: {e}\nНажми кнопку авторизации заново.")
